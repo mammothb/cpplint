@@ -3972,45 +3972,55 @@ def CheckBraces(filename, clean_lines, linenum, error):
   line = clean_lines.elided[linenum]        # get rid of comments and strings
 
   if Match(r'\s*{\s*$', line):
-    # We allow an open brace to start a line in the case where someone is using
-    # braces in a block to explicitly create a new scope, which is commonly used
-    # to control the lifetime of stack-allocated variables.  Braces are also
-    # used for brace initializers inside function calls.  We don't detect this
-    # perfectly: we just don't complain if the last non-whitespace character on
-    # the previous non-blank line is ',', ';', ':', '(', '{', or '}', or if the
-    # previous line starts a preprocessor block. We also allow a brace on the
-    # following line if it is part of an array initialization and would not fit
-    # within the 80 character limit of the preceding line.
+    # We allow an open brace to start a line in the case where someone
+    # is using braces in a block to explicitly create a new scope,
+    # which is commonly used to control the lifetime of stack-allocated
+    # variables. Braces are also used for brace initializers inside
+    # function calls. We don't detect this perfectly: we just don't
+    # complain if the last non-whitespace character on the previous
+    # non-blank line is ',', ';', ':', '(', '{', or '}', or if the
+    # previous line starts a preprocessor block. We also allow a brace
+    # on the following line if it is part of an array initialization
+    # and would not fit within the 80 character limit of the preceding
+    # line.
+    # MODIFICATION: We allow { to be on a new line for class/struct/
+    # namespace declaration and function/method declaration
     prevline = GetPreviousNonBlankLine(clean_lines, linenum)[0]
     if (not Search(r'[,;:}{(]\s*$', prevline) and
+        not Match(r'^\s*(?:class|struct|namespace) \w+(( : ).*)?$',
+                  prevline) and
+        not Match(r'^ {4}public \w+.*$', prevline) and
+        not Match(r'^ {8}[,\w\s]+>\s*$', prevline) and
+        not (not Search(r'^\s*(?:if|else|do|for|while|switch)\b', prevline) and
+             Search(r'[)](?: const)?\s*$', prevline)) and
         not Match(r'\s*#', prevline) and
         not (GetLineWidth(prevline) > _line_length - 2 and '[]' in prevline)):
       error(filename, linenum, 'whitespace/braces', 4,
             '{ should almost always be at the end of the previous line')
 
-  # An else clause should be on the same line as the preceding closing brace.
-  if Match(r'\s*else\b\s*(?:if\b|\{|$)', line):
-    prevline = GetPreviousNonBlankLine(clean_lines, linenum)[0]
-    if Match(r'\s*}\s*$', prevline):
-      error(filename, linenum, 'whitespace/newline', 4,
-            'An else should appear on the same line as the preceding }')
+#   # An else clause should be on the same line as the preceding closing brace.
+#   if Match(r'\s*else\b\s*(?:if\b|\{|$)', line):
+#     prevline = GetPreviousNonBlankLine(clean_lines, linenum)[0]
+#     if Match(r'\s*}\s*$', prevline):
+#       error(filename, linenum, 'whitespace/newline', 4,
+#             'An else should appear on the same line as the preceding }')
 
-  # If braces come on one side of an else, they should be on both.
-  # However, we have to worry about "else if" that spans multiple lines!
-  if Search(r'else if\s*\(', line):       # could be multi-line if
-    brace_on_left = bool(Search(r'}\s*else if\s*\(', line))
-    # find the ( after the if
-    pos = line.find('else if')
-    pos = line.find('(', pos)
-    if pos > 0:
-      (endline, _, endpos) = CloseExpression(clean_lines, linenum, pos)
-      brace_on_right = endline[endpos:].find('{') != -1
-      if brace_on_left != brace_on_right:    # must be brace after if
-        error(filename, linenum, 'readability/braces', 5,
-              'If an else has a brace on one side, it should have it on both')
-  elif Search(r'}\s*else[^{]*$', line) or Match(r'[^}]*else\s*{', line):
-    error(filename, linenum, 'readability/braces', 5,
-          'If an else has a brace on one side, it should have it on both')
+#   # If braces come on one side of an else, they should be on both.
+#   # However, we have to worry about "else if" that spans multiple lines!
+#   if Search(r'else if\s*\(', line):       # could be multi-line if
+#     brace_on_left = bool(Search(r'}\s*else if\s*\(', line))
+#     # find the ( after the if
+#     pos = line.find('else if')
+#     pos = line.find('(', pos)
+#     if pos > 0:
+#       (endline, _, endpos) = CloseExpression(clean_lines, linenum, pos)
+#       brace_on_right = endline[endpos:].find('{') != -1
+#       if brace_on_left != brace_on_right:    # must be brace after if
+#         error(filename, linenum, 'readability/braces', 5,
+#               'If an else has a brace on one side, it should have it on both')
+#   elif Search(r'}\s*else[^{]*$', line) or Match(r'[^}]*else\s*{', line):
+#     error(filename, linenum, 'readability/braces', 5,
+#           'If an else has a brace on one side, it should have it on both')
 
   # Likewise, an else should never have the else clause on the same line
   if Search(r'\belse [^\s{]', line) and not Search(r'\belse if\b', line):
@@ -4607,18 +4617,22 @@ def CheckStyle(filename, clean_lines, linenum, file_extension, nesting_state,
         line.startswith('#define %s' % cppvar) or
         line.startswith('#endif  // %s' % cppvar)):
       is_header_guard = True
-  # #include lines and header guards can be long, since there's no clean way to
-  # split them.
+  # #include lines and header guards can be long, since there's no
+  # clean way to split them.
   #
-  # URLs can be long too.  It's possible to split these, but it makes them
-  # harder to cut&paste.
+  # URLs can be long too.  It's possible to split these, but it makes
+  # them harder to cut&paste.
   #
   # The "$Id:...$" comment may also get very long without it being the
   # developers fault.
   #
-  # Doxygen documentation copying can get pretty long when using an overloaded
-  # function declaration
+  # Doxygen documentation copying can get pretty long when using an
+  # overloaded function declaration
+  # MODIFICATION: Allow unittest classes declaration to be long since
+  # CxxTest requires everything to be on one line
   if (not line.startswith('#include') and not is_header_guard and
+      not Match(r'^class Test\w+ : public CxxTest::TestSuite.*$', line) and
+      not Match(r'^\s*(?://\s*)?void Test\w+\(\).*$', line) and
       not Match(r'^\s*//.*http(s?)://\S*$', line) and
       not Match(r'^\s*//\s*[^\s]*$', line) and
       not Match(r'^// \$Id:.*#[0-9]+ \$$', line) and
@@ -5368,35 +5382,35 @@ def CheckForNonConstReference(filename, clean_lines, linenum,
   if IsInitializerList(clean_lines, linenum):
     return
 
-  # We allow non-const references in a few standard places, like functions
-  # called "swap()" or iostream operators like "<<" or ">>".  Do not check
-  # those function parameters.
-  #
-  # We also accept & in static_assert, which looks like a function but
-  # it's actually a declaration expression.
-  whitelisted_functions = (r'(?:[sS]wap(?:<\w:+>)?|'
-                           r'operator\s*[<>][<>]|'
-                           r'static_assert|COMPILE_ASSERT'
-                           r')\s*\(')
-  if Search(whitelisted_functions, line):
-    return
-  elif not Search(r'\S+\([^)]*$', line):
-    # Don't see a whitelisted function on this line.  Actually we
-    # didn't see any function name on this line, so this is likely a
-    # multi-line parameter list.  Try a bit harder to catch this case.
-    for i in xrange(2):
-      if (linenum > i and
-          Search(whitelisted_functions, clean_lines.elided[linenum - i - 1])):
-        return
+#   # We allow non-const references in a few standard places, like functions
+#   # called "swap()" or iostream operators like "<<" or ">>".  Do not check
+#   # those function parameters.
+#   #
+#   # We also accept & in static_assert, which looks like a function but
+#   # it's actually a declaration expression.
+#   whitelisted_functions = (r'(?:[sS]wap(?:<\w:+>)?|'
+#                            r'operator\s*[<>][<>]|'
+#                            r'static_assert|COMPILE_ASSERT'
+#                            r')\s*\(')
+#   if Search(whitelisted_functions, line):
+#     return
+#   elif not Search(r'\S+\([^)]*$', line):
+#     # Don't see a whitelisted function on this line.  Actually we
+#     # didn't see any function name on this line, so this is likely a
+#     # multi-line parameter list.  Try a bit harder to catch this case.
+#     for i in xrange(2):
+#       if (linenum > i and
+#           Search(whitelisted_functions, clean_lines.elided[linenum - i - 1])):
+#         return
 
-  decls = ReplaceAll(r'{[^}]*}', ' ', line)  # exclude function body
-  for parameter in re.findall(_RE_PATTERN_REF_PARAM, decls):
-    if (not Match(_RE_PATTERN_CONST_REF_PARAM, parameter) and
-        not Match(_RE_PATTERN_REF_STREAM_PARAM, parameter)):
-      error(filename, linenum, 'runtime/references', 2,
-            'Is this a non-const reference? '
-            'If so, make const or use a pointer: ' +
-            ReplaceAll(' *<', '<', parameter))
+#   decls = ReplaceAll(r'{[^}]*}', ' ', line)  # exclude function body
+#   for parameter in re.findall(_RE_PATTERN_REF_PARAM, decls):
+#     if (not Match(_RE_PATTERN_CONST_REF_PARAM, parameter) and
+#         not Match(_RE_PATTERN_REF_STREAM_PARAM, parameter)):
+#       error(filename, linenum, 'runtime/references', 2,
+#             'Is this a non-const reference? '
+#             'If so, make const or use a pointer: ' +
+#             ReplaceAll(' *<', '<', parameter))
 
 
 def CheckCasts(filename, clean_lines, linenum, error):
@@ -6100,9 +6114,9 @@ def FlagCxx11Features(filename, clean_lines, linenum, error):
                                       'future',
                                       'mutex',
                                       'thread',
-                                      'chrono',
+                                    #   'chrono',
                                       'ratio',
-                                      'regex',
+                                    #   'regex',
                                       'system_error',
                                      ):
     error(filename, linenum, 'build/c++11', 5,
